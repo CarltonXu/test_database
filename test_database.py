@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 
 #
-# Copyright 2016 Beijing openstack Technology Co, Ltd.
-#
 # Authors: Xu XingZhuang <hzxuxingzhuang@163.com>
 #
 # Scripts are mainly used for stress testing of different databases,
