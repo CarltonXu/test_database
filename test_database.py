@@ -1,8 +1,9 @@
 #!/usr/bin/env python
 
 #
-# Copyright 2016 Beijing Huron Technology Co, Ltd.
+# Copyright 2016 Beijing openstack Technology Co, Ltd.
 #
+# Authors: Xu XingZhuang <hzxuxingzhuang@163.com>
 #
 # Scripts are mainly used for stress testing of different databases,
 # The way to test is to use Python modules to connect database then
