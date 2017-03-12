@@ -1,8 +1,3 @@
-#!/usr/bin/env python
-
-#
-# Authors: Xu XingZhuang <hzxuxingzhuang@163.com>
-#
 # Scripts are mainly used for stress testing of different databases,
 # The way to test is to use Python modules to connect database then
 # Repeatedly insert data.
@@ -16,17 +11,19 @@
 # Code is reconstructed for test database
 # Defines the general class of the operating database, call Opeartion_DB class
 # can More flexible access to create, delete, add users and other operations
-#
 
 from datetime import datetime
+import functools
 import logging
 import optparse
 import os
 import sys
+import time
+import threading
 
 from sqlalchemy import create_engine
-from sqlalchemy import func, Column, DateTime, Integer, String
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import func, Column, Integer, String
+from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.ext import declarative
 
 Base = declarative.declarative_base()
@@ -36,17 +33,30 @@ DB_CONNECT_URI = {"mysql": "mysql://{user}:{password}@{ip}:{port}/{db}",
                   "sqlserver": "mssql+pymssql://{user}:{password}@{ip}"}
 
 
+def timer(func):
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        func(*args, **kwargs)
+        end_time = time.time()
+        print "Timer: %s" % (end_time-start_time)
+
+    return wrapper
+
+
 def setup_logging():
     """Edit log configure file && output format"""
 
     log_path = os.getcwd()
     logging.basicConfig(level=logging.DEBUG,
                         format="%(asctime)s %(filename)"
-                        "s[line:%(lineno)d]"
-                        "%(levelname)s %(message)s",
+                               "s[line:%(lineno)d] {%(threadName)s} "
+                               "%(levelname)s %(message)s",
                         datefmt="%a, %d %b %Y %H:%M:%S",
-                        filename="%s/test_database.log" % log_path,
+                        filename="%s/db_stresstesting.log" % log_path,
                         filemode="w")
+
 
 def parse_args():
     """The function define how to use this scipt andProvide help manual"""
@@ -106,11 +116,10 @@ class StressTestTable(Base):
 class StressTestDB(object):
     """Define stress test operation database the same class"""
 
-    def __init__(self, uri, date_time=datetime.utcnow(), debug=False):
+    def __init__(self, uri, debug=False):
         self.uri = uri
-        self.date_time = date_time
         self.debug = debug
-        self._engine = self.get_engine()
+        self._engine = self._get_engine(self.uri, debug=self.debug)
         self._session = self.get_session()
 
     def create_database(self):
@@ -120,7 +129,8 @@ class StressTestDB(object):
         Base.metadata.drop_all(self._engine)
 
     def add_test_data(self):
-        new_test = StressTestTable(date_time=self.date_time)
+        start_date = datetime.utcnow()
+        new_test = StressTestTable(date_time=start_date)
         self._session.add(new_test)
         self._session.commit()
 
@@ -130,20 +140,16 @@ class StressTestDB(object):
 
         return data_total
 
-    def get_engine(self):
+    def _get_engine(self, uri, debug=False):
         try:
-            _engine = create_engine(self.uri, echo=self.debug)
+            engine = create_engine(uri, pool_size=100, pool_recycle=7200, echo=debug)
         except Exception as err:
             logging.info(">>> %s" % err)
-
-        return _engine
+        return engine
 
     def get_session(self):
-        _engine = self.get_engine()
-        _maker = sessionmaker(bind=_engine)
-        _session = _maker()
-
-        return _session
+        session = scoped_session(sessionmaker(bind=self._engine, autoflush=True))
+        return session
 
 
 def do_clean_table(connect_uri):
@@ -151,32 +157,42 @@ def do_clean_table(connect_uri):
     begin_test.drop_database()
 
 
+def insert_record(test_obj, num):
+    test_obj.add_test_data()
+    logging.info(">>> Insert the %d commit data..." % num)
+
+
+@timer
 def do_stress_test(connect_uri, **kwargs):
     """Start stress test database opeartion"""
-
+    debug = kwargs['open_debug']
+    test_obj = StressTestDB(connect_uri, debug=debug)
+    test_obj.create_database()
     try:
         for num in xrange(kwargs["total"]):
-            begin_test = StressTestDB(connect_uri,
-                                      date_time=datetime.utcnow(),
-                                      debug=kwargs["open_debug"])
-            begin_test.create_database()
-            begin_test.add_test_data()
-            logging.info(">>> Insert the %d commit data..." % num)
+            threading.Thread(target=insert_record,
+                             name=('Thread: %s' % num),
+                             args=(test_obj, num)).start()
     except KeyboardInterrupt:
         print "Quitting....."
         sys.exit(0)
     finally:
-        begin_test = StressTestDB(connect_uri, debug=kwargs["open_debug"])
+        begin_test = StressTestDB(connect_uri, debug)
         db_total = begin_test.query_data()
         print "A total of %d data in Persons table" % db_total
 
 
-if __name__ == "__main__":
+def main():
     kwargs = parse_args()
     setup_logging()
     if kwargs["clean_table"] is False:
-        do_clean_table()
+        connect_uri = DB_CONNECT_URI.get(kwargs["db_type"]).format(**kwargs)
+        do_clean_table(connect_uri)
         sys.exit(0)
 
     connect_uri = DB_CONNECT_URI.get(kwargs["db_type"]).format(**kwargs)
     do_stress_test(connect_uri, **kwargs)
+
+
+if __name__ == "__main__":
+    main()
