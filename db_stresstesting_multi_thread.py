@@ -1,3 +1,8 @@
+#!/usr/bin/env python
+
+#
+# Authors: Xu XingZhuang <hzxuxingzhuang@163.com>
+#
 # Scripts are mainly used for stress testing of different databases,
 # The way to test is to use Python modules to connect database then
 # Repeatedly insert data.
@@ -119,7 +124,7 @@ class StressTestDB(object):
     def __init__(self, uri, debug=False):
         self.uri = uri
         self.debug = debug
-        self._engine = self._get_engine(self.uri, debug=self.debug)
+        self._engine = self.get_engine()
         self._session = self.get_session()
 
     def create_database(self):
@@ -140,9 +145,10 @@ class StressTestDB(object):
 
         return data_total
 
-    def _get_engine(self, uri, debug=False):
+    def get_engine(self):
         try:
-            engine = create_engine(uri, pool_size=100, pool_recycle=7200, echo=debug)
+            engine = create_engine(self.uri, pool_size=100,
+                                   pool_recycle=7200, echo=self.debug)
         except Exception as err:
             logging.info(">>> %s" % err)
         return engine
